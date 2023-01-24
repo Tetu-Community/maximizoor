@@ -18,7 +18,8 @@ async function main () {
   if (!process.env.DEPLOYER_MNEMONIC) throw new Error('must set mnemonic')
   const signer = ethers.Wallet.fromMnemonic(process.env.DEPLOYER_MNEMONIC, process.env.DEPLOYER_MNEMONIC_PATH || "m/44'/60'/0'/0/0")
 
-  const resp = await axios.get(`https://tetu.community/api/tetu-bal?n=${program.opts().roundId}`)
+  const resp = await axios.get(`https://tetu.community/api/tetu-bal?n=${parseInt(program.opts().roundNum, 10)}`)
+  if (resp.status !== 200 || !resp.data.bribes) throw new Error('error getting data from tetu.community API')
 
   // assemble bribed gauges
   const bribedGauges = {}
