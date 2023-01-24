@@ -1,0 +1,18 @@
+{
+  "name": "maximizoor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@snapshot-labs/snapshot.js": "^0.4.58",
+    "axios": "^1.2.3",
+    "commander": "^10.0.0",
+    "delay": "^5.0.0",
+    "ethers": "^5.7.2"
+  }
+}

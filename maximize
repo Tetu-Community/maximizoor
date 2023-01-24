@@ -1,0 +1,127 @@
+#!/usr/bin/env node
+
+const delay = require('delay')
+const ethers = require('ethers')
+const BigNumber = require('bignumber.js')
+const axios = require('axios')
+const snapshot = require('@snapshot-labs/snapshot.js')
+const client = new snapshot.Client712('https://hub.snapshot.org')
+const { Command } = require('commander')
+
+const program = new Command()
+program.description('Vote on gauge proposal')
+program.option('-r, --roundNum <round>')
+program.option('-d, --dry')
+program.parse()
+
+async function main () {
+  if (!process.env.DEPLOYER_MNEMONIC) throw new Error('must set mnemonic')
+  const signer = ethers.Wallet.fromMnemonic(process.env.DEPLOYER_MNEMONIC, process.env.DEPLOYER_MNEMONIC_PATH || "m/44'/60'/0'/0/0")
+
+  const resp = await axios.get(`https://tetu.community/api/tetu-bal?n=${program.opts().roundId}`)
+
+  // assemble bribed gauges
+  const bribedGauges = {}
+
+  // add bribe amounts
+  for (const b of resp.data.bribes) {
+    const gaugeAddr = b.gauge.toLowerCase()
+    if (!bribedGauges[gaugeAddr]) {
+      bribedGauges[gaugeAddr] = {
+        bribeAmountUSDC: BigNumber(0),
+        votes: BigNumber(0)
+      }
+    }
+
+    bribedGauges[gaugeAddr].bribeAmountUSDC = BigNumber.sum(
+      bribedGauges[gaugeAddr].bribeAmountUSDC,
+      BigNumber(b.amountUsdc).shiftedBy(-6)
+    )
+  }
+
+  // add total votes *except ours*
+  let myVp
+  for (const vote of resp.data.snapshotData.votes) {
+    if (vote.voter.toLowerCase() === signer.address.toLowerCase()) {
+      myVp = vote.vp
+      continue
+    }
+    const sumChoices = BigNumber.sum(...Object.values(vote.choice))
+    for (const [k, v] of Object.entries(vote.choice)) {
+      const vp = BigNumber(v).div(sumChoices).times(vote.vp)
+      const gauge = resp.data.choicesToGaugeAddress[resp.data.snapshotData.proposal.choices[parseInt(k, 10) - 1]].toLowerCase()
+      if (!bribedGauges[gauge]) continue
+      bribedGauges[gauge].votes = bribedGauges[gauge].votes.plus(vp)
+    }
+  }
+
+  // determine overall bribe per USD
+  // const totalBribesUSDC = BigNumber.sum(...Object.values(bribedGauges).map(d => d.bribeAmountUSDC))
+  // const totalVotes = BigNumber.sum(...Object.values(bribedGauges).map(d => d.votes))
+  // const averageBribePerVote = totalBribesUSDC.div(totalVotes)
+  // const averageBribePerVoteAfter = totalBribesUSDC.div(totalVotes.plus(myVp))
+  // console.log('average bribe per vote before my vote', averageBribePerVote.toFixed(4))
+  // console.log('average bribe per vote after my vote', averageBribePerVoteAfter.toFixed(4))
+
+  const myVotes = {}
+
+  function findHighestBribedGaugePerVote () {
+    let highestAmount = BigNumber(0)
+    let highestGauge
+
+    for (const [gauge, details] of Object.entries(bribedGauges)) {
+      const amount = details.bribeAmountUSDC.div(details.votes.plus(myVotes[gauge] || 0))
+
+      if (amount.gt(highestAmount)) {
+        highestAmount = amount
+        highestGauge = gauge
+      }
+    }
+
+    return highestGauge
+  }
+
+  const incrementAmount = 1
+  for (let i = 0; i < myVp; i = i + incrementAmount) {
+    const gauge = findHighestBribedGaugePerVote()
+    if (!myVotes[gauge]) myVotes[gauge] = BigNumber(0)
+    myVotes[gauge] = myVotes[gauge].plus(incrementAmount)
+  }
+
+  const totalVpUsed = BigNumber.sum(...Object.values(myVotes))
+  const myVotePercentages = {}
+  for (const [k, v] of Object.entries(myVotes)) {
+    myVotePercentages[k] = v.div(totalVpUsed).times(100)
+  }
+
+  const choice = {}
+  for (const [k, v] of Object.entries(myVotePercentages)) {
+    const foundChoice = resp.data.snapshotData.proposal.choices.find(c => c.includes(k.substring(0, 8).toLowerCase()))
+    const choiceIdx = resp.data.snapshotData.proposal.choices.indexOf(foundChoice) + 1
+    choice[parseInt(choiceIdx, 10)] = parseInt(v.times(100).toFixed(0), 10)
+  }
+
+  const vote = {
+    space: 'tetubal.eth',
+    proposal: resp.data.snapshotData.proposal.id,
+    type: 'weighted',
+    metadata: JSON.stringify({}),
+    choice
+  }
+
+  if (program.opts().dry) {
+    return console.log('dry mode, not submitting', vote)
+  } else {
+    console.log(vote)
+    console.log('About to vote in 3 seconds...')
+    await delay(3000)
+
+    await client.vote(
+      signer,
+      signer.address,
+      vote
+    )
+  }
+}
+
+main()
