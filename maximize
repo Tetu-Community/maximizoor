@@ -11,12 +11,22 @@ const { Command } = require('commander')
 const program = new Command()
 program.description('Vote on gauge proposal')
 program.option('-r, --roundNum <round>')
+program.option('--myAddress <address>')
 program.option('-d, --dry')
 program.parse()
 
 async function main () {
-  if (!process.env.DEPLOYER_MNEMONIC) throw new Error('must set mnemonic')
-  const signer = ethers.Wallet.fromMnemonic(process.env.DEPLOYER_MNEMONIC, process.env.DEPLOYER_MNEMONIC_PATH || "m/44'/60'/0'/0/0")
+  let signer
+  let myAddress
+
+  if (program.opts().myAddress) {
+    myAddress = program.opts().myAddress
+  } else if (process.env.DEPLOYER_MNEMONIC) {
+    signer = ethers.Wallet.fromMnemonic(process.env.DEPLOYER_MNEMONIC, process.env.DEPLOYER_MNEMONIC_PATH || "m/44'/60'/0'/0/0")
+    myAddress = signer.address
+  } else {
+    throw new Error('must provide a signer or pass --myAddress option')
+  }
 
   const resp = await axios.get(`https://tetu.community/api/tetu-bal?n=${parseInt(program.opts().roundNum, 10)}`)
   if (resp.status !== 200 || !resp.data.bribes) throw new Error('error getting data from tetu.community API')
@@ -43,7 +53,7 @@ async function main () {
   // add total votes *except ours*
   let myVp
   for (const vote of resp.data.snapshotData.votes) {
-    if (vote.voter.toLowerCase() === signer.address.toLowerCase()) {
+    if (vote.voter.toLowerCase() === myAddress.toLowerCase()) {
       myVp = vote.vp
       continue
     }
@@ -113,6 +123,8 @@ async function main () {
   if (program.opts().dry) {
     return console.log('dry mode, not submitting', vote)
   } else {
+    if (!signer) throw new Error('must pass a signer or use --dry mode')
+
     console.log(vote)
     console.log('About to vote in 3 seconds...')
     await delay(3000)
