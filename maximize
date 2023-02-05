@@ -10,7 +10,7 @@ const { Command } = require('commander')
 
 const program = new Command()
 program.description('Vote on gauge proposal')
-program.option('-r, --roundNum <round>')
+program.requiredOption('-r, --roundNum <round>')
 program.option('--myAddress <address>')
 program.option('-d, --dry')
 program.parse()
