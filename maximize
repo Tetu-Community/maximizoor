@@ -12,6 +12,7 @@ const program = new Command()
 program.description('Vote on gauge proposal')
 program.requiredOption('-r, --roundNum <round>')
 program.option('--myAddress <address>')
+program.option('-mv, --manualVotes <votes>', 'format: gaugeaddress=vp, comma separated')
 program.option('-d, --dry')
 program.parse()
 
@@ -92,8 +93,22 @@ async function main () {
     return highestGauge
   }
 
+  let i = 0
   const incrementAmount = 1
-  for (let i = 0; i < myVp; i = i + incrementAmount) {
+
+  const manualVotes = {}
+  for (const mv of program.opts().manualVotes.trim().split(',')) {
+    if (!mv) continue
+    const [gauge, amt] = mv.split('=')
+    manualVotes[gauge.toLowerCase()] = parseFloat(amt)
+  }
+
+  for (const [gaugePrefix, vp] of Object.entries(manualVotes)) {
+    i = i + vp
+    myVotes[gaugePrefix] = BigNumber(vp)
+  }
+
+  for (; i < myVp; i = i + incrementAmount) {
     const gauge = findHighestBribedGaugePerVote()
     if (!myVotes[gauge]) myVotes[gauge] = BigNumber(0)
     myVotes[gauge] = myVotes[gauge].plus(incrementAmount)
