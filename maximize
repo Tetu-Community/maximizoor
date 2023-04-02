@@ -97,7 +97,7 @@ async function main () {
   const incrementAmount = 1
 
   const manualVotes = {}
-  for (const mv of program.opts().manualVotes.trim().split(',')) {
+  for (const mv of (program.opts().manualVotes || '').trim().split(',')) {
     if (!mv) continue
     const [gauge, amt] = mv.split('=')
     manualVotes[gauge.toLowerCase()] = parseFloat(amt)
